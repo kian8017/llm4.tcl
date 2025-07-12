@@ -71,6 +71,7 @@ oo::class create ::aimodels::AIClient {
 # OpenAI-specific client implementation
 oo::class create ::aimodels::OpenAIClient {
     superclass ::aimodels::AIClient
+    variable api_key base_url default_model timeout
     
     constructor {args} {
         # Set OpenAI defaults
