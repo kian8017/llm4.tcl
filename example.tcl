@@ -6,13 +6,7 @@ source llm4.tcl
 # Create an OpenAI client
 set client [::llm4::openai]
 
-# Simple query
-puts "Asking: What is 2+2?"
-set response [$client prompt "What is 2+2?"]
-puts "Response: [dict get $response content]"
-puts ""
-
 # Query with system message
-puts "Asking about TCP/IP with networking expert context..."
-set response [$client prompt "Explain TCP/IP in one sentence" -system "You are a helpful networking expert"]
+puts "Asking about TCP/IP with pirate context..."
+set response [$client prompt "Explain TCP/IP in one sentence" -system "Talk like a pirate"]
 puts "Response: [dict get $response content]"
