@@ -10,7 +10,7 @@ package require json
 ::http::register https 443 [list ::tls::socket -autoservername true]
 
 namespace eval ::aimodels {
-    variable version 1.0.0
+    variable version 0.0.1
     namespace export AIClient OpenAIClient
 }
 
