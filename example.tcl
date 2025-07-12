@@ -1,10 +1,10 @@
 #!/usr/bin/env tclsh
 
-# Simple example script using the aimodels library
+# Simple example script using the llm4 library
 source llm4.tcl
 
 # Create an OpenAI client
-set client [::aimodels::openai]
+set client [::llm4::openai]
 
 # Simple query
 puts "Asking: What is 2+2?"

@@ -9,13 +9,13 @@ package require json
 # Register HTTPS support
 ::http::register https 443 [list ::tls::socket -autoservername true]
 
-namespace eval ::aimodels {
+namespace eval ::llm4 {
     variable version 0.0.1
     namespace export AIClient OpenAIClient
 }
 
 # Base class for all AI model clients
-oo::class create ::aimodels::AIClient {
+oo::class create ::llm4::AIClient {
     variable api_key
     variable base_url
     variable default_model
@@ -69,8 +69,8 @@ oo::class create ::aimodels::AIClient {
 }
 
 # OpenAI-specific client implementation
-oo::class create ::aimodels::OpenAIClient {
-    superclass ::aimodels::AIClient
+oo::class create ::llm4::OpenAIClient {
+    superclass ::llm4::AIClient
     variable api_key base_url default_model timeout
     
     constructor {args} {
@@ -251,15 +251,15 @@ oo::class create ::aimodels::OpenAIClient {
 }
 
 # Convenience procedure
-proc ::aimodels::openai {args} {
-    return [::aimodels::OpenAIClient new {*}$args]
+proc ::llm4::openai {args} {
+    return [::llm4::OpenAIClient new {*}$args]
 }
 
-package provide aimodels $::aimodels::version
+package provide llm4 $::llm4::version
 
 # Example usage:
 #
-# set client [::aimodels::openai]
+# set client [::llm4::openai]
 # set response [$client prompt "What is the capital of France?"]
 # puts [dict get $response content]
 #
