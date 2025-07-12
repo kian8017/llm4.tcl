@@ -1,7 +1,7 @@
 #!/usr/bin/env tclsh
 
 # Simple example script using the aimodels library
-source main.tcl
+source llm4.tcl
 
 # Create an OpenAI client
 set client [::aimodels::openai]
