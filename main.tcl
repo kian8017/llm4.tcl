@@ -75,7 +75,7 @@ oo::class create ::aimodels::OpenAIClient {
     constructor {args} {
         # Set OpenAI defaults
         set base_url "https://api.openai.com/v1"
-        set default_model "gpt-4o-mini"
+        set default_model "gpt-4.1-nano"
         
         # Check for API key in environment
         if {![dict exists $args -api_key] && [info exists ::env(OPENAI_API_KEY)]} {
