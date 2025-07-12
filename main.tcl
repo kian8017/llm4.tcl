@@ -2,8 +2,6 @@
 # A simple TclOO-based library for interfacing with AI models
 # Starting with OpenAI, designed to be extensible
 
-package require Tcl 8.6
-package require TclOO
 package require http
 package require tls
 package require json
