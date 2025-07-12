@@ -5,6 +5,7 @@
 package require http
 package require tls
 package require json
+package require json::write
 
 # Register HTTPS support
 ::http::register https 443 [list ::tls::socket -autoservername true]
@@ -95,11 +96,13 @@ oo::class create ::llm4::OpenAIClient {
         # Parse optional arguments
         set model $default_model
         set temperature 1.0
+        set response_format ""
         
         foreach {key value} $args {
             switch -exact -- $key {
                 -model { set model $value }
                 -temperature { set temperature $value }
+                -response_format { set response_format $value }
                 default {
                     error "Unknown option: $key"
                 }
@@ -116,8 +119,13 @@ oo::class create ::llm4::OpenAIClient {
             temperature $temperature \
         ]
         
+        # Add response_format if provided
+        if {$response_format ne ""} {
+            dict set request_data response_format $response_format
+        }
+        
         # Convert to JSON
-        set json_data [my dict_to_json $request_data]
+        set json_data [my build_request_json $request_data]
         
         # Set headers
         set headers [list \
@@ -175,7 +183,54 @@ oo::class create ::llm4::OpenAIClient {
         }
         lappend messages [dict create role "user" content $user_message]
         
-        return [my send_request $messages {*}$filtered_args]
+        set response [my send_request $messages {*}$filtered_args]
+        
+        # Check for refusal and throw error if present
+        if {[dict exists $response refusal]} {
+            error "Model refused request: [dict get $response refusal]"
+        }
+        
+        # Return just the content
+        return [dict get $response content]
+    }
+    
+    # Send a prompt with structured output using JSON schema
+    method prompt_structured {user_message schema args} {
+        set system_message ""
+        set filtered_args {}
+        
+        # Parse arguments to extract system message
+        foreach {key value} $args {
+            switch -exact -- $key {
+                -system { set system_message $value }
+                default { lappend filtered_args $key $value }
+            }
+        }
+        
+        # Build messages array
+        set messages {}
+        if {$system_message ne ""} {
+            lappend messages [dict create role "system" content $system_message]
+        }
+        lappend messages [dict create role "user" content $user_message]
+        
+        # Convert schema to response_format
+        set response_format [my schema_to_response_format $schema]
+        
+        set response [my send_request $messages -response_format $response_format {*}$filtered_args]
+        
+        # Check for refusal and throw error if present
+        if {[dict exists $response refusal]} {
+            error "Model refused request: [dict get $response refusal]"
+        }
+        
+        # Check if structured data was parsed successfully
+        if {![dict exists $response parsed]} {
+            error "Failed to parse structured response: [dict get $response content]"
+        }
+        
+        # Return just the parsed structured data
+        return [dict get $response parsed]
     }
     
     # Validate messages format
@@ -196,28 +251,157 @@ oo::class create ::llm4::OpenAIClient {
         }
     }
     
-    # Convert dict to JSON string
-    method dict_to_json {d} {
-        set pairs {}
-        dict for {key value} $d {
-            if {$key eq "messages" && [llength $value] > 0} {
-                # Special handling for messages array
-                set items {}
-                foreach item $value {
-                    if {[llength $item] % 2 == 0} {
-                        lappend items [my dict_to_json $item]
+    # Convert Tcl schema dict to OpenAI response_format structure
+    method schema_to_response_format {schema} {
+        # Validate required fields
+        if {![dict exists $schema name]} {
+            error "Schema must include a 'name' field"
+        }
+        
+        if {![dict exists $schema schema]} {
+            error "Schema must include a 'schema' field with the JSON schema definition"
+        }
+        
+        set schema_name [dict get $schema name]
+        set schema_def [dict get $schema schema]
+        
+        # Build response_format structure
+        set response_format [dict create \
+            type "json_schema" \
+            json_schema [dict create \
+                name $schema_name \
+                strict true \
+                schema $schema_def \
+            ] \
+        ]
+        
+        return $response_format
+    }
+    
+    # Validate schema structure
+    method validate_schema {schema} {
+        if {![dict exists $schema name]} {
+            error "Schema must include a 'name' field"
+        }
+        
+        if {![dict exists $schema schema]} {
+            error "Schema must include a 'schema' field"
+        }
+        
+        set schema_def [dict get $schema schema]
+        
+        if {![dict exists $schema_def type]} {
+            error "Schema definition must include a 'type' field"
+        }
+        
+        return true
+    }
+    
+    # Convert request data to JSON using json::write
+    method build_request_json {request_data} {
+        set json_pairs {}
+        
+        dict for {key value} $request_data {
+            if {$key eq "messages"} {
+                # Handle messages array
+                set message_array {}
+                foreach msg $value {
+                    set msg_pairs {}
+                    dict for {msg_key msg_value} $msg {
+                        lappend msg_pairs $msg_key [::json::write string $msg_value]
                     }
+                    lappend message_array [::json::write object {*}$msg_pairs]
                 }
-                lappend pairs "\"$key\":\[[join $items ,]\]"
+                lappend json_pairs $key [::json::write array {*}$message_array]
+            } elseif {$key eq "response_format"} {
+                # Handle response_format nested structure
+                lappend json_pairs $key [my format_response_format_json $value]
+            } elseif {[string is boolean $value]} {
+                # Handle boolean values - use string since json::write doesn't have boolean
+                if {$value} {
+                    lappend json_pairs $key "true"
+                } else {
+                    lappend json_pairs $key "false"
+                }
             } elseif {[string is double $value]} {
-                lappend pairs "\"$key\":$value"
+                # Handle numeric values - just use the value directly
+                lappend json_pairs $key $value
             } else {
-                # Escape quotes in strings
-                set escaped [string map {\" \\\" \\ \\\\} $value]
-                lappend pairs "\"$key\":\"$escaped\""
+                # Handle string values
+                lappend json_pairs $key [::json::write string $value]
             }
         }
-        return "\{[join $pairs ,]\}"
+        
+        return [::json::write object {*}$json_pairs]
+    }
+    
+    # Format response_format structure as JSON
+    method format_response_format_json {response_format} {
+        set rf_pairs {}
+        
+        dict for {key value} $response_format {
+            if {$key eq "json_schema"} {
+                # Handle json_schema nested object
+                set js_pairs {}
+                dict for {js_key js_value} $value {
+                    if {$js_key eq "schema"} {
+                        # Handle the actual JSON schema
+                        lappend js_pairs $js_key [my format_schema_json $js_value]
+                    } elseif {[string is boolean $js_value]} {
+                        if {$js_value} {
+                            lappend js_pairs $js_key "true"
+                        } else {
+                            lappend js_pairs $js_key "false"
+                        }
+                    } else {
+                        lappend js_pairs $js_key [::json::write string $js_value]
+                    }
+                }
+                lappend rf_pairs $key [::json::write object {*}$js_pairs]
+            } else {
+                lappend rf_pairs $key [::json::write string $value]
+            }
+        }
+        
+        return [::json::write object {*}$rf_pairs]
+    }
+    
+    # Format JSON schema structure
+    method format_schema_json {schema} {
+        set schema_pairs {}
+        
+        dict for {key value} $schema {
+            if {$key eq "properties"} {
+                # Handle properties object
+                set prop_pairs {}
+                dict for {prop_key prop_value} $value {
+                    lappend prop_pairs $prop_key [my format_schema_json $prop_value]
+                }
+                lappend schema_pairs $key [::json::write object {*}$prop_pairs]
+            } elseif {$key eq "items"} {
+                # Handle items (for arrays)
+                lappend schema_pairs $key [my format_schema_json $value]
+            } elseif {$key eq "required"} {
+                # Handle required array
+                set req_items {}
+                foreach item $value {
+                    lappend req_items [::json::write string $item]
+                }
+                lappend schema_pairs $key [::json::write array {*}$req_items]
+            } elseif {[string is boolean $value]} {
+                if {$value} {
+                    lappend schema_pairs $key "true"
+                } else {
+                    lappend schema_pairs $key "false"
+                }
+            } elseif {[string is integer $value]} {
+                lappend schema_pairs $key $value
+            } else {
+                lappend schema_pairs $key [::json::write string $value]
+            }
+        }
+        
+        return [::json::write object {*}$schema_pairs]
     }
     
     # Parse API response
@@ -227,13 +411,46 @@ oo::class create ::llm4::OpenAIClient {
         # Extract the message content
         set choices [dict get $response_dict choices]
         set first_choice [lindex $choices 0]
-        set content [dict get $first_choice message content]
+        set message [dict get $first_choice message]
+        set content [dict get $message content]
         
-        return [dict create \
+        # Check for refusal (structured outputs safety feature)
+        set refusal ""
+        if {[dict exists $message refusal]} {
+            set refusal [dict get $message refusal]
+            # Treat null/empty as no refusal
+            if {$refusal eq "null" || $refusal eq ""} {
+                set refusal ""
+            }
+        }
+        
+        # Try to parse JSON content for structured outputs
+        set parsed_content ""
+        if {$refusal eq "" && $content ne ""} {
+            try {
+                set parsed_content [::json::json2dict $content]
+            } on error {} {
+                # Content is not JSON, leave as string
+            }
+        }
+        
+        set result [dict create \
             content $content \
             model [dict get $response_dict model] \
             usage [dict get $response_dict usage] \
         ]
+        
+        # Add refusal if present
+        if {$refusal ne ""} {
+            dict set result refusal $refusal
+        }
+        
+        # Add parsed content if successfully parsed
+        if {$parsed_content ne ""} {
+            dict set result parsed $parsed_content
+        }
+        
+        return $result
     }
     
     # Parse error response
