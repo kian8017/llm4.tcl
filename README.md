@@ -26,6 +26,8 @@ source llm4.tcl
 - `json` - JSON parsing for API responses
 - `json::write` - JSON serialization for API requests
 
+**Note:** If you have [tcllib](https://core.tcl-lang.org/tcllib/doc/trunk/embedded/index.md) installed, all dependencies are covered.
+
 ## Quick Start
 
 ### Basic Usage
