@@ -200,16 +200,15 @@ oo::class create ::aimodels::OpenAIClient {
     method dict_to_json {d} {
         set pairs {}
         dict for {key value} $d {
-            if {[string is list $value] && [llength $value] > 0} {
-                # Handle message arrays
+            if {$key eq "messages" && [llength $value] > 0} {
+                # Special handling for messages array
                 set items {}
                 foreach item $value {
-                    lappend items [my dict_to_json $item]
+                    if {[llength $item] % 2 == 0} {
+                        lappend items [my dict_to_json $item]
+                    }
                 }
                 lappend pairs "\"$key\":\[[join $items ,]\]"
-            } elseif {[string is dict $value]} {
-                # Handle nested objects
-                lappend pairs "\"$key\":[my dict_to_json $value]"
             } elseif {[string is double $value]} {
                 lappend pairs "\"$key\":$value"
             } else {
